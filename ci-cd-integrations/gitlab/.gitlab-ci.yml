@@ -1,0 +1,48 @@
+stages:
+  - test-go-app-build
+  - test-docker-build
+
+test-go-app-build:
+  image: golang:latest
+  stage: test-go-app-build
+
+  variables:
+    # Please edit to your GitLab project
+    REPO_NAME: gitlab.com/deepfence-io/simple_go_server
+
+    # The problem is that to be able to use go get, one needs to put
+    # the repository in the $GOPATH. So for example if your gitlab domain
+    # is gitlab.com, and that your repository is namespace/project, and
+    # the default GOPATH being /go, then you'd need to have your
+    # repository in /go/src/gitlab.com/namespace/project
+    # Thus, making a symbolic link corrects this.
+  before_script:
+    - mkdir -p $GOPATH/src/$(dirname $REPO_NAME)
+    - ln -svf $CI_PROJECT_DIR $GOPATH/src/$REPO_NAME
+    - cd $GOPATH/src/$REPO_NAME
+
+  script:
+    - go build -o $CI_PROJECT_DIR/demo-app src/main.go
+  artifacts:
+    paths:
+      - demo-app
+    
+test-docker-build-and-cve:
+  image: docker:latest
+  stage: test-docker-build
+  services: 
+    - docker:dind
+  variables:
+    IMAGE_NAME: go-server-test:latest
+    DEEPFENCE_KEY: key
+    DEEPFENCE_CONSOLE_URL: 127.0.0.1
+    FAIL_CVE_COUNT: 1000
+    FAIL_CRITICAL_CVE_COUNT: 1000
+    FAIL_HIGH_CVE_COUNT: 11
+    FAIL_MEDIUM_CVE_COUNT: 1000
+    FAIL_LOW_CVE_COUNT: 1000
+    FAIL_CVE_SCORE: -1
+  script:
+    - docker build -t $IMAGE_NAME .
+    - docker pull deepfenceio/deepfence_package_scanner_ce:1.3.1
+    - docker run -i --rm --net=host -v /var/run/docker.sock:/var/run/docker.sock deepfenceio/deepfence_package_scanner_ce:1.3.1 -deepfence-key=$DEEPFENCE_KEY -vulnerability-scan=true -output=table -mode=local -mgmt-console-url=$DEEPFENCE_CONSOLE_URL -source=$IMAGE_NAME -fail-on-count=$FAIL_CVE_COUNT -fail-on-critical-count=$FAIL_CRITICAL_CVE_COUNT -fail-on-high-count=$FAIL_HIGH_CVE_COUNT -fail-on-medium-count=$FAIL_MEDIUM_CVE_COUNT -fail-on-low-count=$FAIL_LOW_CVE_COUNT -fail-on-score=$FAIL_CVE_SCORE
